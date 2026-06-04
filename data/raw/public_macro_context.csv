@@ -1,0 +1,7 @@
+as_of_date,indicator,value,unit,risk_area,amber,red,direction,source,note
+2025-03-10,SBV refinancing rate,4.5,% p.a.,Interest rate risk,5.0,6.0,high_bad,https://thuvienphapluat.vn/chinh-sach-phap-luat-moi/vn/ho-tro-phap-luat/tai-chinh/80501/lai-suat-tai-cap-von-la-gi-muc-lai-suat-tai-cap-von-nam-2025,Public reported rate under Decision 1123/QD-NHNN 2023; update manually if SBV changes.
+2025-03-10,SBV discount rate,3.0,% p.a.,Interest rate risk,4.0,5.0,high_bad,https://thuvienphapluat.vn/chinh-sach-phap-luat-moi/vn/ho-tro-phap-luat/tai-chinh/80501/lai-suat-tai-cap-von-la-gi-muc-lai-suat-tai-cap-von-nam-2025,Public reported rate; update manually from SBV.
+2025-03-10,SBV overnight lending rate,5.0,% p.a.,Liquidity risk,6.0,7.0,high_bad,https://thuvienphapluat.vn/chinh-sach-phap-luat-moi/vn/ho-tro-phap-luat/tai-chinh/80501/lai-suat-tai-cap-von-la-gi-muc-lai-suat-tai-cap-von-nam-2025,Public reported rate; update manually from SBV.
+2026-06-04,VBMA 10Y government bond yield,4.227,% p.a.,Bond market risk,4.5,5.0,high_bad,https://vbma.org.vn/en/market-data/monthly-highlight,VBMA monthly-highlight search result; replace with live VBMA file/API if available.
+2026-05-18,Vietnam 10Y government bond yield,4.38,% p.a.,Bond market risk,4.5,5.0,high_bad,https://tradingeconomics.com/vietnam/government-bond-yield,Trading Economics search result; use as public context only.
+2026-06-04,VNINDEX public snapshot,1853.04,index points,Market risk,0,0,high_bad,https://dstock.vndirect.com.vn/,Dstock search result snapshot; dashboard uses vnstock live for market risk.
