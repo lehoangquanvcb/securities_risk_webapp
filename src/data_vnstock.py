@@ -1,9 +1,13 @@
 """vnstock market data layer for the V3 CRO Command Center.
 
-Fixes in this version:
-- Normalizes unsupported UI sources such as TCBS/SSI to vnstock-supported sources.
-- Automatically tries multiple vnstock sources before falling back to cache/raw/sample.
-- Keeps clear messages showing which source actually worked.
+Version: V4-compatible fallback layer
+
+What this file does:
+- Works with vnstock 4.x when available.
+- Keeps backward compatibility with vnstock 3.x style calls.
+- Uses only commonly supported public sources: VCI, TCBS, MSN.
+- Automatically tries several API styles and sources before using cache/raw/sample.
+- Produces clear messages so the Streamlit UI shows whether data is live, cache, raw CSV, or sample.
 """
 from __future__ import annotations
 
@@ -17,13 +21,13 @@ import pandas as pd
 DEFAULT_CACHE_DIR = Path("data/cache")
 DEFAULT_RAW_DIR = Path("data/raw")
 
-SUPPORTED_SOURCES = ["VCI", "KBS", "MSN", "FMP"]
+SUPPORTED_SOURCES = ["VCI", "TCBS", "MSN"]
 SOURCE_MAP = {
     "VCI": "VCI",
-    "KBS": "KBS",
+    "TCBS": "TCBS",
     "MSN": "MSN",
-    "FMP": "FMP",
-    "TCBS": "VCI",
+    "KBS": "VCI",
+    "FMP": "VCI",
     "SSI": "VCI",
     "DNSE": "VCI",
 }
@@ -50,6 +54,13 @@ def source_candidates(source: str | None) -> list[str]:
     return list(dict.fromkeys(candidates))
 
 
+def _normalize_interval(interval: str) -> str:
+    interval = str(interval or "1D").strip()
+    if interval.lower() in {"d", "day", "daily", "1d"}:
+        return "1D"
+    return interval
+
+
 def _normalize_market_df(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
     if df is None or df.empty:
         raise ValueError("Empty dataframe returned from vnstock")
@@ -62,23 +73,29 @@ def _normalize_market_df(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
         "tradingDate": "date",
         "trading_date": "date",
         "date_time": "date",
-        "Date": "date",
         "datetime": "date",
+        "Date": "date",
+        "date": "date",
         "Close": "close",
+        "close": "close",
         "closePrice": "close",
         "close_price": "close",
         "matchPrice": "close",
         "Open": "open",
+        "open": "open",
         "openPrice": "open",
         "High": "high",
+        "high": "high",
         "highPrice": "high",
         "Low": "low",
+        "low": "low",
         "lowPrice": "low",
         "Volume": "volume",
         "volume": "volume",
         "value": "trading_value",
         "tradingValue": "trading_value",
         "trading_value": "trading_value",
+        "matchedValue": "trading_value",
     }
     data = data.rename(columns={k: v for k, v in rename_map.items() if k in data.columns})
 
@@ -124,6 +141,73 @@ def sample_market_data(symbol: str = "VNINDEX", days: int = 520) -> pd.DataFrame
     )
 
 
+def _history_call(obj, start: str, end: str, interval: str) -> pd.DataFrame:
+    """Call history with a few interval formats used by different vnstock versions."""
+    interval = _normalize_interval(interval)
+    tries = [
+        {"start": start, "end": end, "interval": interval},
+        {"start": start, "end": end, "interval": interval.lower()},
+        {"start": start, "end": end, "interval": "1D"},
+        {"start": start, "end": end, "interval": "d"},
+        {"start": start, "end": end},
+    ]
+    errors = []
+    for kwargs in tries:
+        try:
+            return obj.history(**kwargs)
+        except TypeError as exc:
+            errors.append(str(exc))
+        except Exception as exc:
+            errors.append(str(exc))
+    raise RuntimeError("; ".join(errors))
+
+
+def _fetch_vnstock_v4_direct_quote(symbol: str, start: str, end: str, source: str, interval: str) -> pd.DataFrame:
+    """Use vnstock_data direct explorer classes introduced around vnstock 4.x."""
+    source = normalize_source(source)
+
+    if source == "VCI":
+        from vnstock_data.explorer.vci.quote import Quote  # type: ignore
+        quote = Quote(symbol=symbol)
+    elif source == "TCBS":
+        from vnstock_data.explorer.tcbs.quote import Quote  # type: ignore
+        quote = Quote(symbol=symbol)
+    elif source == "MSN":
+        from vnstock_data.explorer.msn.quote import Quote  # type: ignore
+        quote = Quote(symbol=symbol)
+    else:
+        raise ValueError(f"Unsupported direct vnstock_data source: {source}")
+
+    df = _history_call(quote, start=start, end=end, interval=interval)
+    out = _normalize_market_df(df, symbol)
+    out["data_source"] = f"vnstock4:{source}:direct_quote"
+    return out
+
+
+def _fetch_vnstock_v4_facade(symbol: str, start: str, end: str, source: str, interval: str) -> pd.DataFrame:
+    """Use unified Vnstock facade. This also works for some vnstock 3.x installs."""
+    from vnstock import Vnstock  # type: ignore
+
+    source = normalize_source(source)
+    stock = Vnstock().stock(symbol=symbol, source=source)
+    df = _history_call(stock.quote, start=start, end=end, interval=interval)
+    out = _normalize_market_df(df, symbol)
+    out["data_source"] = f"vnstock4:{source}:facade"
+    return out
+
+
+def _fetch_vnstock_legacy_quote(symbol: str, start: str, end: str, source: str, interval: str) -> pd.DataFrame:
+    """Fallback for older vnstock 3.x Quote class."""
+    from vnstock import Quote  # type: ignore
+
+    source = normalize_source(source)
+    quote = Quote(symbol=symbol, source=source)
+    df = _history_call(quote, start=start, end=end, interval=interval)
+    out = _normalize_market_df(df, symbol)
+    out["data_source"] = f"vnstock3:{source}:Quote"
+    return out
+
+
 def fetch_market_data_vnstock(
     symbol: str = "VNINDEX",
     start: str = "2024-01-01",
@@ -131,34 +215,22 @@ def fetch_market_data_vnstock(
     source: str = "VCI",
     interval: str = "1D",
 ) -> pd.DataFrame:
+    """Fetch one symbol from vnstock using one explicit source."""
     end = end or _today()
     source = normalize_source(source)
     errors: list[str] = []
 
-    try:
-        from vnstock import Vnstock  # type: ignore
+    fetchers = [
+        ("vnstock4_direct_quote", _fetch_vnstock_v4_direct_quote),
+        ("vnstock4_facade", _fetch_vnstock_v4_facade),
+        ("vnstock_legacy_quote", _fetch_vnstock_legacy_quote),
+    ]
 
-        stock = Vnstock().stock(symbol=symbol, source=source)
-        df = stock.quote.history(start=start, end=end, interval=interval)
-        out = _normalize_market_df(df, symbol)
-        out["data_source"] = f"vnstock:{source}:Vnstock"
-        return out
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"{source}/Vnstock style failed: {exc}")
-
-    try:
-        from vnstock import Quote  # type: ignore
-
-        quote = Quote(symbol=symbol, source=source)
+    for name, fetcher in fetchers:
         try:
-            df = quote.history(start=start, end=end, interval=interval)
-        except Exception:
-            df = quote.history(start=start, end=end, interval="d")
-        out = _normalize_market_df(df, symbol)
-        out["data_source"] = f"vnstock:{source}:Quote"
-        return out
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"{source}/Quote style failed: {exc}")
+            return fetcher(symbol=symbol, start=start, end=end, source=source, interval=interval)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{source}/{name} failed: {exc}")
 
     raise RuntimeError("; ".join(errors))
 
@@ -208,6 +280,7 @@ def load_market_data(
             end=end,
             source=requested_source,
         )
+
         cache_path = DEFAULT_CACHE_DIR / f"market_{symbol.upper()}_{used_source.upper()}_{start}_{end}.csv".replace(":", "-")
         if use_cache:
             df.to_csv(cache_path, index=False)
