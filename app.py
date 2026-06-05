@@ -44,22 +44,23 @@ with st.sidebar:
 
     st.header("1) vnstock market data")
     symbol = st.text_input("Main market symbol", "VNINDEX")
-    watchlist = st.text_input("Watchlist symbols", "VNINDEX")
+    watchlist = st.text_input("Watchlist symbols", "")
     source = st.selectbox("vnstock source", ["VCI"], index=0)
     start_date = st.date_input("Start date", value=date(2024, 1, 1))
     end_date = st.date_input("End date", value=date.today())
     strict_live = st.checkbox("Require live vnstock data only", value=False)
     refresh = st.button("Refresh market data")
+    st.caption("Tip: avoid repeated refreshes; vnstock free API may rate-limit requests.")
 
     st.header("2) Portfolio assumption")
     prop_trading_value = st.number_input("Proprietary trading portfolio value (VND)", value=120_000_000_000, step=10_000_000_000)
     total_margin_limit = st.number_input("Total margin limit (VND)", value=500_000_000_000, step=10_000_000_000)
 
-@st.cache_data(ttl=60 * 30, show_spinner=False)
+@st.cache_data(ttl=60 * 60 * 6, show_spinner=False)
 def cached_market(symbol: str, start: str, end: str, source: str, allow_sample_fallback: bool):
     return load_market_data(symbol=symbol, start=start, end=end, source=source, allow_sample_fallback=allow_sample_fallback)
 
-@st.cache_data(ttl=60 * 30, show_spinner=False)
+@st.cache_data(ttl=60 * 60 * 6, show_spinner=False)
 def cached_watchlist(symbols: tuple[str, ...], start: str, end: str, source: str):
     return load_multiple_market_data(symbols=symbols, start=start, end=end, source=source)
 
@@ -149,13 +150,17 @@ with tab2:
     st.dataframe(var_table, use_container_width=True)
     st.subheader("Watchlist")
     symbols = tuple([s.strip().upper() for s in watchlist.split(",") if s.strip()])
-    watch_df, watch_msgs = cached_watchlist(symbols, start, end, source)
-    for msg in watch_msgs:
-        st.caption(msg)
-    if not watch_df.empty:
-        latest = watch_df.sort_values("date").groupby("symbol", as_index=False).tail(1)
-        st.dataframe(latest[["symbol", "date", "close", "data_source"]], use_container_width=True)
-        st.plotly_chart(px.line(watch_df, x="date", y="close", color="symbol", title="Watchlist close prices"), use_container_width=True)
+
+    if not symbols:
+        st.info("Watchlist is disabled by default to avoid vnstock API rate limits on Streamlit Cloud. Enter symbols manually, e.g. VNINDEX, when needed.")
+    else:
+        watch_df, watch_msgs = cached_watchlist(symbols, start, end, source)
+        for msg in watch_msgs:
+            st.caption(msg)
+        if not watch_df.empty:
+            latest = watch_df.sort_values("date").groupby("symbol", as_index=False).tail(1)
+            st.dataframe(latest[["symbol", "date", "close", "data_source"]], use_container_width=True)
+            st.plotly_chart(px.line(watch_df, x="date", y="close", color="symbol", title="Watchlist close prices"), use_container_width=True)
 
 with tab3:
     st.subheader("Margin Book from V3 Master Workbook")
