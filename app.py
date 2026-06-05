@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from src.data_vnstock import load_market_data, load_multiple_market_data
+from src.data_vnstock import load_market_data, load_multiple_market_data, sample_market_data
 from src.excel_io import (
     MASTER_WORKBOOK,
     find_master_workbook,
@@ -71,7 +71,17 @@ if refresh:
 start = start_date.strftime("%Y-%m-%d")
 end = end_date.strftime("%Y-%m-%d")
 
-market_df, market_msg = cached_market(symbol.strip().upper(), start, end, source, not strict_live)
+# Safe startup mode:
+# Do not call vnstock automatically when the app opens. This prevents Streamlit Cloud
+# from hanging when the free vnstock API is rate-limited.
+if refresh or strict_live:
+    market_df, market_msg = cached_market(symbol.strip().upper(), start, end, source, not strict_live)
+else:
+    market_df = sample_market_data(symbol.strip().upper())
+    market_msg = (
+        "Startup Safe Mode: using sample data. "
+        "Click 'Refresh market data' to load live vnstock data."
+    )
 margin_df, margin_msg = load_margin_book(workbook_path)
 liquidity_df, liquidity_metrics, liquidity_msg = load_liquidity_risk(workbook_path)
 operational_df, operational_metrics, operational_msg = load_operational_risk(workbook_path)
@@ -152,7 +162,9 @@ with tab2:
     symbols = tuple([s.strip().upper() for s in watchlist.split(",") if s.strip()])
 
     if not symbols:
-        st.info("Watchlist is disabled by default to avoid vnstock API rate limits on Streamlit Cloud. Enter symbols manually, e.g. VNINDEX, when needed.")
+        st.info("Watchlist is disabled by default to avoid vnstock API rate limits on Streamlit Cloud. Enter symbols manually only when needed.")
+    elif not (refresh or strict_live):
+        st.info("Watchlist will load only after clicking 'Refresh market data' or enabling 'Require live vnstock data only'.")
     else:
         watch_df, watch_msgs = cached_watchlist(symbols, start, end, source)
         for msg in watch_msgs:
