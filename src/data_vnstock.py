@@ -21,15 +21,17 @@ import pandas as pd
 DEFAULT_CACHE_DIR = Path("data/cache")
 DEFAULT_RAW_DIR = Path("data/raw")
 
-SUPPORTED_SOURCES = ["VCI", "TCBS", "MSN"]
+# Streamlit Cloud safe mode: use VCI only to avoid vnstock API rate limits.
+SUPPORTED_SOURCES = ["VCI"]
 SOURCE_MAP = {
     "VCI": "VCI",
-    "TCBS": "TCBS",
-    "MSN": "MSN",
+    "TCBS": "VCI",
+    "MSN": "VCI",
     "KBS": "VCI",
     "FMP": "VCI",
     "SSI": "VCI",
     "DNSE": "VCI",
+    "MAS": "VCI",
 }
 
 
@@ -49,9 +51,9 @@ def normalize_source(source: str | None) -> str:
 
 
 def source_candidates(source: str | None) -> list[str]:
-    first = normalize_source(source)
-    candidates = [first] + [s for s in SUPPORTED_SOURCES if s != first]
-    return list(dict.fromkeys(candidates))
+    # Always use VCI only. This prevents multiple fallback calls from exhausting
+    # the free vnstock quota on Streamlit Cloud.
+    return ["VCI"]
 
 
 def _normalize_interval(interval: str) -> str:
@@ -324,10 +326,16 @@ def load_multiple_market_data(
 ) -> tuple[pd.DataFrame, list[str]]:
     frames, messages = [], []
 
+    # Deduplicate symbols while preserving order to reduce API calls.
+    seen: set[str] = set()
+    clean_symbols: list[str] = []
     for sym in symbols:
         sym = sym.strip().upper()
-        if not sym:
-            continue
+        if sym and sym not in seen:
+            clean_symbols.append(sym)
+            seen.add(sym)
+
+    for sym in clean_symbols:
         df, msg = load_market_data(symbol=sym, start=start, end=end, source=source)
         frames.append(df)
         messages.append(msg)

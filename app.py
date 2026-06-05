@@ -44,8 +44,8 @@ with st.sidebar:
 
     st.header("1) vnstock market data")
     symbol = st.text_input("Main market symbol", "VNINDEX")
-    watchlist = st.text_input("Watchlist symbols", "VNINDEX,HNXINDEX,UPCOMINDEX,VN30")
-    source = st.selectbox("vnstock source", ["VCI", "KBS", "TCBS", "MAS"], index=0)
+    watchlist = st.text_input("Watchlist symbols", "VNINDEX")
+    source = st.selectbox("vnstock source", ["VCI"], index=0)
     start_date = st.date_input("Start date", value=date(2024, 1, 1))
     end_date = st.date_input("End date", value=date.today())
     strict_live = st.checkbox("Require live vnstock data only", value=False)
