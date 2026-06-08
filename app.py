@@ -48,9 +48,9 @@ with st.sidebar:
     source = st.selectbox("vnstock source", ["VCI"], index=0)
     start_date = st.date_input("Start date", value=date(2024, 1, 1))
     end_date = st.date_input("End date", value=date.today())
-    strict_live = st.checkbox("Require live vnstock data only", value=False)
-    refresh = st.button("Refresh market data")
-    st.caption("Tip: avoid repeated refreshes; vnstock free API may rate-limit requests.")
+    strict_live = False
+    refresh = st.button("Load live vnstock data")
+    st.caption("Safe mode: app opens with sample data. Click once to load live vnstock; avoid repeated clicks due to API rate limits.")
 
     st.header("2) Portfolio assumption")
     prop_trading_value = st.number_input("Proprietary trading portfolio value (VND)", value=120_000_000_000, step=10_000_000_000)
@@ -74,13 +74,14 @@ end = end_date.strftime("%Y-%m-%d")
 # Safe startup mode:
 # Do not call vnstock automatically when the app opens. This prevents Streamlit Cloud
 # from hanging when the free vnstock API is rate-limited.
-if refresh or strict_live:
-    market_df, market_msg = cached_market(symbol.strip().upper(), start, end, source, not strict_live)
+# Live data is loaded only when the user clicks "Load live vnstock data".
+if refresh:
+    market_df, market_msg = cached_market(symbol.strip().upper(), start, end, source, True)
 else:
     market_df = sample_market_data(symbol.strip().upper())
     market_msg = (
         "Startup Safe Mode: using sample data. "
-        "Click 'Refresh market data' to load live vnstock data."
+        "Click 'Load live vnstock data' once to load live vnstock data."
     )
 margin_df, margin_msg = load_margin_book(workbook_path)
 liquidity_df, liquidity_metrics, liquidity_msg = load_liquidity_risk(workbook_path)
@@ -163,8 +164,8 @@ with tab2:
 
     if not symbols:
         st.info("Watchlist is disabled by default to avoid vnstock API rate limits on Streamlit Cloud. Enter symbols manually only when needed.")
-    elif not (refresh or strict_live):
-        st.info("Watchlist will load only after clicking 'Refresh market data' or enabling 'Require live vnstock data only'.")
+    elif not refresh:
+        st.info("Watchlist will load only after clicking 'Load live vnstock data'.")
     else:
         watch_df, watch_msgs = cached_watchlist(symbols, start, end, source)
         for msg in watch_msgs:
