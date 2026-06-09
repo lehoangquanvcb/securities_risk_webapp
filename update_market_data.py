@@ -18,7 +18,7 @@ import pandas as pd
 RAW_DIR = Path("data/raw")
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_SYMBOLS = ["VNINDEX", "HNXINDEX", "UPCOMINDEX", "VN30"]
+DEFAULT_SYMBOLS = ["VNINDEX", "HNXINDEX", "UPCOMINDEX", "VN30", "VCB", "MBB", "FPT", "HPG", "MWG", "VHM", "SSI", "VND"]
 DEFAULT_START = "2024-01-01"
 DEFAULT_END = date.today().strftime("%Y-%m-%d")
 
@@ -108,6 +108,22 @@ def main() -> None:
             time.sleep(3)
         except Exception as exc:
             print(f"[ERROR] {symbol}: {exc}")
+    sector_map = pd.DataFrame([
+        {"symbol": "VCB", "sector": "Banking"},
+        {"symbol": "MBB", "sector": "Banking"},
+        {"symbol": "FPT", "sector": "Technology"},
+        {"symbol": "HPG", "sector": "Steel"},
+        {"symbol": "MWG", "sector": "Retail"},
+        {"symbol": "VHM", "sector": "Real Estate"},
+        {"symbol": "SSI", "sector": "Securities"},
+        {"symbol": "VND", "sector": "Securities"},
+        {"symbol": "VNINDEX", "sector": "Market Index"},
+        {"symbol": "VN30", "sector": "Market Index"},
+        {"symbol": "HNXINDEX", "sector": "Market Index"},
+        {"symbol": "UPCOMINDEX", "sector": "Market Index"},
+    ])
+    sector_map.to_csv(RAW_DIR / "sector_map.csv", index=False)
+    print(f"[OK] sector_map.csv -> {RAW_DIR / 'sector_map.csv'}")
     print("Done. Commit generated CSV files to GitHub.")
 
 

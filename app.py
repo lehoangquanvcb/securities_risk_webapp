@@ -20,6 +20,7 @@ from src.excel_io import (
     load_stress_template,
 )
 from src.public_context import latest_public_context, load_public_context
+from src.market_timing import build_market_analysis
 from src.risk_engine import (
     build_kri_table,
     compute_margin_metrics,
@@ -103,15 +104,16 @@ amber_count = int((kri["status"] == "Amber").sum())
 status_fn = {"Green": st.success, "Amber": st.warning, "Red": st.error}.get(status, st.info)
 status_fn(f"Overall Risk Status: {status}")
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "1. CRO Dashboard",
     "2. Market Risk / VaR",
-    "3. Margin Risk",
-    "4. Liquidity Risk",
-    "5. Operational & Compliance",
-    "6. Risk Appetite & KRI",
-    "7. Stress Testing",
-    "8. Risk Committee Pack",
+    "3. Market Timing & Screening",
+    "4. Margin Risk",
+    "5. Liquidity Risk",
+    "6. Operational & Compliance",
+    "7. Risk Appetite & KRI",
+    "8. Stress Testing",
+    "9. Risk Committee Pack",
 ])
 
 with tab1:
@@ -168,6 +170,50 @@ with tab2:
             st.plotly_chart(px.line(watch_df, x="date", y="close", color="symbol", title="Watchlist close prices"), use_container_width=True)
 
 with tab3:
+    st.subheader("Market Timing & Screening")
+    st.caption("Decision-support only. The model ranks timing, sectors, and stocks using trend, momentum, volatility, drawdown, and relative strength.")
+
+    analysis = build_market_analysis(market["data"])
+    timing = analysis["timing"]
+    sector_rank = analysis["sector_rank"]
+    stock_rank = analysis["stock_rank"]
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Market timing score", timing["score"])
+    c2.metric("Signal", timing["signal"])
+    c3.metric("Action", timing["action"])
+    st.info(timing["reason"])
+
+    st.subheader("Sector Rotation")
+    if sector_rank.empty:
+        st.warning("No sector data found. Add data/raw/sector_map.csv and stock CSV files to enable sector screening.")
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Potential / Overweight sectors**")
+            st.dataframe(sector_rank[sector_rank["recommendation"].str.contains("Potential", na=False)], use_container_width=True)
+        with c2:
+            st.markdown("**Exit / Underweight sectors**")
+            st.dataframe(sector_rank[sector_rank["recommendation"].str.contains("Exit", na=False)], use_container_width=True)
+        st.plotly_chart(px.bar(sector_rank, x="sector", y="avg_score", color="recommendation", title="Sector ranking score"), use_container_width=True)
+        st.dataframe(sector_rank, use_container_width=True)
+
+    st.subheader("Stock Screening")
+    if stock_rank.empty:
+        st.warning("No stock universe found. Add stock CSV files under data/raw/market_<TICKER>.csv and sector_map.csv.")
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Potential stock candidates**")
+            st.dataframe(stock_rank[stock_rank["recommendation"].str.contains("Potential", na=False)].head(30), use_container_width=True)
+        with c2:
+            st.markdown("**Exit / Reduce candidates**")
+            st.dataframe(stock_rank[stock_rank["recommendation"].str.contains("Exit", na=False)].head(30), use_container_width=True)
+        st.download_button("Download Stock Screening CSV", stock_rank.to_csv(index=False).encode("utf-8"), file_name="stock_screening_v4.csv")
+        st.dataframe(stock_rank, use_container_width=True)
+
+
+with tab4:
     st.subheader("Margin Book from V3 Master Workbook")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total exposure", f"{margin['total_exposure']/1e9:,.0f} VND bn")
@@ -182,7 +228,7 @@ with tab3:
         st.plotly_chart(px.bar(by_sector, x="sector", y="exposure_vnd", title="Margin exposure by sector"), use_container_width=True)
     st.dataframe(margin["data"].sort_values("exposure_vnd", ascending=False).head(50), use_container_width=True)
 
-with tab4:
+with tab5:
     st.subheader("Liquidity Risk from V3 Master Workbook")
     c1, c2, c3 = st.columns(3)
     c1.metric("Liquidity buffer ratio", f"{liquidity_metrics['liquidity_buffer_ratio']:.2f}x")
@@ -190,7 +236,7 @@ with tab4:
     c3.metric("Stressed outflows", f"{liquidity_metrics['stressed_outflows_bn']:,.0f} VND bn")
     st.dataframe(liquidity_df, use_container_width=True)
 
-with tab5:
+with tab6:
     st.subheader("Operational Risk & Compliance from V3 Master Workbook")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Incidents", f"{operational_metrics['monthly_incident_count']}")
@@ -201,7 +247,7 @@ with tab5:
         st.plotly_chart(px.bar(operational_df.groupby("category", as_index=False).size(), x="category", y="size", title="Incidents by category"), use_container_width=True)
     st.dataframe(operational_df, use_container_width=True)
 
-with tab6:
+with tab7:
     st.subheader("Risk Appetite Statement")
     st.dataframe(risk_appetite, use_container_width=True)
     st.subheader("KRI Library")
@@ -211,12 +257,12 @@ with tab6:
     st.subheader("Public / Macro Context")
     st.dataframe(public_context, use_container_width=True)
 
-with tab7:
+with tab8:
     st.subheader("Stress Testing")
     st.dataframe(stress, use_container_width=True)
     st.plotly_chart(px.bar(stress, x="scenario", y="total_estimated_loss_vnd", title="Estimated loss by scenario"), use_container_width=True)
 
-with tab8:
+with tab9:
     st.subheader("Risk Committee Pack - Download Center")
     st.caption("These CSVs can be attached to the Risk Committee report or pasted back into the V3 Master Workbook.")
     st.download_button("Download KRI CSV", kri.to_csv(index=False).encode("utf-8"), file_name="risk_kri_v3.csv")
